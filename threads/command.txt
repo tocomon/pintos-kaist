@@ -1,0 +1,8 @@
+cd to pintos/src/threads/ 
+make
+cd build
+make check
+
+Running Pintos
+pintos -- -q run alarm-multiple
+

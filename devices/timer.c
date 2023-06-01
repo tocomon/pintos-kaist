@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "lib/kernel/list.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -90,11 +91,13 @@ timer_elapsed (int64_t then) {
 /* Suspends execution for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+	int64_t start = timer_ticks (); // timer_sleep 함수 구동 시점의 global tick 값 저장
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	if(start){
+		if(timer_elapsed (start) < ticks)
+			thread_sleep(start+ticks);
+	}
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -121,11 +124,24 @@ timer_print_stats (void) {
 	printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
+
+bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
+    struct thread *a = list_entry(a_, struct thread, elem);
+    struct thread *b = list_entry(b_, struct thread, elem);
+
+    return a->wakeup_tick < b->wakeup_tick;
+}
+
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+	if(!list_empty(&sleep_list)){
+		list_sort(&sleep_list, timer_less_func, thread_tick);
+		thread_awake(&sleep_list, ticks);
+	};
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

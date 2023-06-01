@@ -26,7 +26,13 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-static struct list ready_list;
+struct list* ready_list;
+
+/* List of processes in THREAD_BLOCKED state */
+struct list* sleep_list;
+
+/* List of ALL processes */
+struct list* all_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -108,6 +114,8 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
+	list_init (&all_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -115,6 +123,8 @@ thread_init (void) {
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+
+	int64_t* next_tick_to_awake = INT64_MAX; 
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -587,4 +597,46 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+void
+thread_sleep (int64_t ticks) {
+	struct thread *curr = thread_current ();
+	enum intr_level old_level;
+
+	ASSERT (!intr_context ());
+
+	old_level = intr_disable ();
+	if (curr != idle_thread){
+		curr->status = THREAD_BLOCKED;
+		curr->wakeup_tick = ticks;
+		list_push_back (&sleep_list, &curr->elem);
+		schedule();
+	}
+	intr_set_level (old_level);
+}
+
+bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
+    struct thread *a = list_entry(a_, struct thread, elem);
+    struct thread *b = list_entry(b_, struct thread, elem);
+
+    return a->wakeup_tick < b->wakeup_tick;
+}
+
+void
+update_next_tick_to_awake(int64_t ticks){
+	int64_t* next_tick_to_awake = ticks;
+}
+
+int64_t get_next_tick_to_awake(void){
+	return next_tick_to_awake;
+}
+
+void
+thread_awake (struct list* sleep_list, int64_t ticks) {
+	struct thread *to_wake_up = list_entry(list_pop_front(&sleep_list), struct thread, elem);
+	if (to_wake_up->wakeup_tick >= ticks){
+		list_push_back (&ready_list, &to_wake_up->elem);
+	}
+	update_next_tick_to_awake(list_min(&sleep_list, timer_less_func, NULL));
 }

@@ -1,0 +1,6 @@
+pintos가 제대로 동작되는지 확인 (Project 1의 경우)
+
+cd pintos-kaist
+source ./activate
+cd threads
+make check
