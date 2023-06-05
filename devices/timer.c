@@ -30,6 +30,8 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -94,10 +96,8 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks (); // timer_sleep 함수 구동 시점의 global tick 값 저장
 
 	ASSERT (intr_get_level () == INTR_ON);
-	if(start){
-		if(timer_elapsed (start) < ticks)
-			thread_sleep(start+ticks);
-	}
+	if(timer_elapsed (start) < ticks)
+		thread_sleep(start+ticks);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -125,23 +125,20 @@ timer_print_stats (void) {
 }
 
 
-bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
-    struct thread *a = list_entry(a_, struct thread, elem);
-    struct thread *b = list_entry(b_, struct thread, elem);
-
-    return a->wakeup_tick < b->wakeup_tick;
-}
-
 /* Timer interrupt handler. */
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+	
+	while(next_tick_to_awake <= ticks){
+		thread_awake();
+	}
 
-	if(!list_empty(&sleep_list)){
-		list_sort(&sleep_list, timer_less_func, thread_tick);
-		thread_awake(&sleep_list, ticks);
-	};
+	// if(!list_empty(&sleep_list)){
+	// 	list_sort(&sleep_list, timer_less_func, NULL);
+	// 	thread_awake(ticks);
+	// };
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -200,3 +197,4 @@ real_time_sleep (int64_t num, int32_t denom) {
 		busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000));
 	}
 }
+

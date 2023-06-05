@@ -15,6 +15,9 @@
 #include "userprog/process.h"
 #endif
 
+int64_t next_tick_to_awake;
+static struct list sleep_list;
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -26,13 +29,7 @@
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
-struct list* ready_list;
-
-/* List of processes in THREAD_BLOCKED state */
-struct list* sleep_list;
-
-/* List of ALL processes */
-struct list* all_list;
+static struct list ready_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -51,6 +48,8 @@ static long long idle_ticks;    /* # of timer ticks spent idle. */
 static long long kernel_ticks;  /* # of timer ticks in kernel threads. */
 static long long user_ticks;    /* # of timer ticks in user programs. */
 
+//extern int64_t* next_tick_to_awake; 
+
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
@@ -68,6 +67,12 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+
+bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+
+// //priority functions
+// bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux);
+// void test_max_priority (void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -115,7 +120,6 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&sleep_list);
-	list_init (&all_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -124,7 +128,7 @@ thread_init (void) {
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
 
-	int64_t* next_tick_to_awake = INT64_MAX; 
+	next_tick_to_awake = INT64_MAX;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -217,6 +221,17 @@ thread_create (const char *name, int priority,
 	/* Add to run queue. */
 	thread_unblock (t);
 
+	//priority
+	// test_max_priority();
+	// if(t->priority < list_entry(list_max (&ready_list, cmp_priority, NULL), struct thread, elem)->priority){
+	// 	thread_yield();
+	// }
+
+	// struct thread *curr = thread_current ();
+	// if(curr->priority < t->priority){
+	// 	thread_yield();
+	// }
+
 	return tid;
 }
 
@@ -251,6 +266,7 @@ thread_unblock (struct thread *t) {
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
 	list_push_back (&ready_list, &t->elem);
+	//list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -312,9 +328,12 @@ thread_yield (void) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	if (curr != idle_thread)
+	if (curr != idle_thread){
 		list_push_back (&ready_list, &curr->elem);
+		//list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
+	}
 	do_schedule (THREAD_READY);
+	//schedule ();
 	intr_set_level (old_level);
 }
 
@@ -322,6 +341,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	//test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -599,8 +619,10 @@ allocate_tid (void) {
 	return tid;
 }
 
+
+//////////////////////////////////////////////////////////
 void
-thread_sleep (int64_t ticks) {
+thread_sleep (int64_t wakeup_time) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
@@ -608,35 +630,54 @@ thread_sleep (int64_t ticks) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread){
-		curr->status = THREAD_BLOCKED;
-		curr->wakeup_tick = ticks;
-		list_push_back (&sleep_list, &curr->elem);
-		schedule();
+		if(wakeup_time < next_tick_to_awake)
+			next_tick_to_awake = wakeup_time;
+		curr->wakeup_tick_arrival_time = wakeup_time;
+		list_insert_ordered (&sleep_list, &curr->elem, timer_less_func, NULL);
+		thread_block();
+		//do_schedule(THREAD_BLOCKED);
 	}
 	intr_set_level (old_level);
 }
 
-bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
+void
+thread_awake (void) {
+	if(!list_empty(&sleep_list)){
+		struct thread *to_wake_up_thread = list_entry(list_pop_front(&sleep_list), struct thread, elem);
+		update_next_tick_to_awake();
+		thread_unblock(to_wake_up_thread);
+	}
+}
+
+
+void
+update_next_tick_to_awake(void){
+	if(!list_empty(&sleep_list)){
+		next_tick_to_awake = list_entry(list_begin(&sleep_list), struct thread, elem) -> wakeup_tick_arrival_time;
+	}
+	else{
+		next_tick_to_awake = INT64_MAX;
+	}
+}
+
+bool 
+timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
     struct thread *a = list_entry(a_, struct thread, elem);
     struct thread *b = list_entry(b_, struct thread, elem);
 
-    return a->wakeup_tick < b->wakeup_tick;
+    return a->wakeup_tick_arrival_time < b->wakeup_tick_arrival_time;
 }
 
-void
-update_next_tick_to_awake(int64_t ticks){
-	int64_t* next_tick_to_awake = ticks;
-}
+// bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
+//     struct thread *a = list_entry(a_, struct thread, elem);
+//     struct thread *b = list_entry(b_, struct thread, elem);
 
-int64_t get_next_tick_to_awake(void){
-	return next_tick_to_awake;
-}
+//     return a->priority < b->priority;
+// }
 
-void
-thread_awake (struct list* sleep_list, int64_t ticks) {
-	struct thread *to_wake_up = list_entry(list_pop_front(&sleep_list), struct thread, elem);
-	if (to_wake_up->wakeup_tick >= ticks){
-		list_push_back (&ready_list, &to_wake_up->elem);
-	}
-	update_next_tick_to_awake(list_min(&sleep_list, timer_less_func, NULL));
-}
+// void test_max_priority (void){
+// 	if(thread_current ()->priority < list_entry(list_max (&ready_list, cmp_priority, NULL), struct thread, elem)->priority){
+// 		return thread_yield();
+// 	}
+// }
+

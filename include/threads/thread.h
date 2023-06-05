@@ -108,7 +108,8 @@ struct thread {
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
 
-	int64_t wakeup_tick; // how about wakeup_tick_arrival_time? wakeup_tick_departure_time?
+	int64_t wakeup_tick_arrival_time; // how about wakeup_tick_arrival_time? wakeup_tick_departure_time?
+
 };
 
 /* If false (default), use round-robin scheduler.
@@ -146,20 +147,20 @@ int thread_get_load_avg (void);
 void do_iret (struct intr_frame *tf);
 
 //////////////////////////////////////////
+//alarm clock
+extern int64_t next_tick_to_awake;
 
-extern struct list* ready_list;
-extern struct list* sleep_list;
-extern struct list* all_list;
+void thread_sleep(int64_t wakeup_time);
+void thread_awake(void);
+void update_next_tick_to_awake(void);
 
-extern int64_t* next_tick_to_awake; 
+extern bool timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux);
 
-void thread_sleep(int64_t ticks);
+//priority
+void test_max_priority (void);
+bool cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
-void thread_awake(int64_t ticks);
-
-void update_next_tick_to_awake(int64_t ticks);
-
-int64_t get_next_tick_to_awake(void);
 
 
 #endif /* threads/thread.h */
+

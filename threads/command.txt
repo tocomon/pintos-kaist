@@ -3,6 +3,10 @@ make
 cd build
 make check
 
+source ./activate
+
 Running Pintos
+pintos -- -q run alarm-single
 pintos -- -q run alarm-multiple
+
 
