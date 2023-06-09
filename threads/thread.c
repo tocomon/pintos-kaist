@@ -222,15 +222,7 @@ thread_create (const char *name, int priority,
 	thread_unblock (t);
 
 	//priority
-	// test_max_priority();
-	// if(t->priority < list_entry(list_max (&ready_list, cmp_priority, NULL), struct thread, elem)->priority){
-	// 	thread_yield();
-	// }
-
-	// struct thread *curr = thread_current ();
-	// if(curr->priority < t->priority){
-	// 	thread_yield();
-	// }
+	test_max_priority();
 
 	return tid;
 }
@@ -265,8 +257,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
-	//list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
+	//list_push_back (&ready_list, &t->elem);
+	list_insert_ordered(&ready_list, &t->elem, cmp_priority, NULL);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -329,11 +321,10 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread){
-		list_push_back (&ready_list, &curr->elem);
-		//list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
+		//list_push_back (&ready_list, &curr->elem);
+		list_insert_ordered(&ready_list, &curr->elem, cmp_priority, NULL);
 	}
 	do_schedule (THREAD_READY);
-	//schedule ();
 	intr_set_level (old_level);
 }
 
@@ -341,7 +332,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
-	//test_max_priority();
+	test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -635,7 +626,6 @@ thread_sleep (int64_t wakeup_time) {
 		curr->wakeup_tick_arrival_time = wakeup_time;
 		list_insert_ordered (&sleep_list, &curr->elem, timer_less_func, NULL);
 		thread_block();
-		//do_schedule(THREAD_BLOCKED);
 	}
 	intr_set_level (old_level);
 }
@@ -664,20 +654,22 @@ bool
 timer_less_func(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
     struct thread *a = list_entry(a_, struct thread, elem);
     struct thread *b = list_entry(b_, struct thread, elem);
-
     return a->wakeup_tick_arrival_time < b->wakeup_tick_arrival_time;
 }
 
-// bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
-//     struct thread *a = list_entry(a_, struct thread, elem);
-//     struct thread *b = list_entry(b_, struct thread, elem);
+/////////////////////////////////////////////////////////////
 
-//     return a->priority < b->priority;
-// }
+void test_max_priority (void){
+	if(!list_empty(&ready_list)){
+		if(thread_get_priority() < list_entry(list_front(&ready_list), struct thread, elem)->priority ){
+			return thread_yield();
+		}
+	}
+}
 
-// void test_max_priority (void){
-// 	if(thread_current ()->priority < list_entry(list_max (&ready_list, cmp_priority, NULL), struct thread, elem)->priority){
-// 		return thread_yield();
-// 	}
-// }
+bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *aux) {
+    struct thread *a = list_entry(a_, struct thread, elem);
+    struct thread *b = list_entry(b_, struct thread, elem);
+    return a->priority > b->priority;
+}
 
